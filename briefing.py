@@ -55,7 +55,8 @@ def kakao_send(msgs):
     if "refresh_token" in d:  # shortcut: 不自动回写 secret, 刷新令牌约 2 个月到期, 到时重新授权一次
         print("⚠ Kakao 返回了新的 refresh_token, 请重新授权并更新 secret")
     for text, link in msgs:
-        tpl = {"object_type": "text", "text": text, "link": {"web_url": link, "mobile_web_url": link}}
+        tpl = {"object_type": "text", "text": text, "link": {"web_url": link, "mobile_web_url": link},
+               "button_title": "원문 보기"}  # 链接域名需先在 Kakao「제품 링크 관리」登记(news.google.com), 否则点不开
         call("https://kapi.kakao.com/v2/api/talk/memo/default/send",
              urllib.parse.urlencode({"template_object": json.dumps(tpl, ensure_ascii=False)}).encode(),
              {"Authorization": "Bearer " + d["access_token"]})
