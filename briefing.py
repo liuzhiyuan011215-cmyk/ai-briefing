@@ -1,5 +1,5 @@
 """每日 AI 新闻简报: Google News RSS -> Gemini 挑 3 条并写中文摘要 -> KakaoTalk「我的聊天」。
-环境变量: GEMINI_API_KEY, KAKAO_REST_KEY, KAKAO_REFRESH_TOKEN; 可选 FORCE=1(跳过时间/已发检查), DRY=1(只打印)。"""
+环境变量: GEMINI_API_KEY, KAKAO_REST_KEY, KAKAO_REFRESH_TOKEN, KAKAO_CLIENT_SECRET(应用开了 Client Secret 时必填); 可选 FORCE=1(跳过时间/已发检查), DRY=1(只打印)。"""
 import json, os, sys, urllib.error, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
@@ -50,7 +50,8 @@ def build(items, picks):
 def kakao_send(msgs):
     d = json.loads(call("https://kauth.kakao.com/oauth/token", urllib.parse.urlencode({
         "grant_type": "refresh_token", "client_id": os.environ["KAKAO_REST_KEY"],
-        "refresh_token": os.environ["KAKAO_REFRESH_TOKEN"]}).encode()))
+        "refresh_token": os.environ["KAKAO_REFRESH_TOKEN"],
+        "client_secret": os.environ.get("KAKAO_CLIENT_SECRET", "")}).encode()))
     if "refresh_token" in d:  # shortcut: 不自动回写 secret, 刷新令牌约 2 个月到期, 到时重新授权一次
         print("⚠ Kakao 返回了新的 refresh_token, 请重新授权并更新 secret")
     for text, link in msgs:
