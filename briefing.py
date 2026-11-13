@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 KST = timezone(timedelta(hours=9))
 SEND_AFTER = (8, 50)  # 目标 9:00, 提前 10 分钟放行; Actions 会延迟, 所以 cron 从凌晨起每 30 分钟触发
 STATE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "state.json")
-MODEL = os.environ.get("GEMINI_MODEL", "gemini-3.8-flash")
+MODELS = ["gemini-3.5-flash", "gemini-flash-lite-latest", "gemini-3.8-flash"]  # 按顺序尝试
 RSS = "https://news.google.com/rss/search?" + urllib.parse.urlencode(
     {"q": "AI 인공지능 when:1d", "hl": "ko", "gl": "KR", "ceid": "KR:ko"})
 
@@ -32,14 +32,19 @@ def fetch():
 
 def ask_gemini(items):
     lines = "\n".join(f"{n}. {t}" for n, (t, _) in enumerate(items))
-    prompt = ("下面是带编号的韩国 AI 新闻标题。选出最重要的 3 条, 各写一句中文摘要(40 字内, "
-              "只能用标题里已有的信息, 不要编造数字或日期)。"
-              '只返回 JSON 数组: [{"i": 编号, "s": "摘要"}]\n' + lines)
+    prompt = (lines + "\n\n以上是带编号的韩国 AI 新闻标题。选出最重要的 3 条, 把每条翻译概括成一句简体中文(必须是中文, 不能是韩文, "
+              "40 字内, 只能用标题里已有的信息, 不要编造数字或日期)。"
+              '只返回 JSON 数组, 例如 [{"i": 3, "s": "三星发布新一代 AI 芯片"}]')
     body = json.dumps({"contents": [{"parts": [{"text": prompt}]}],
                        "generationConfig": {"responseMimeType": "application/json"}}).encode()
-    r = call(f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL}:generateContent", body,
-             {"Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]})
-    return json.loads(json.loads(r)["candidates"][0]["content"]["parts"][0]["text"])
+    for m in MODELS:  # 一个模型过载(503)就换下一个
+        try:
+            r = call(f"https://generativelanguage.googleapis.com/v1beta/models/{m}:generateContent", body,
+                     {"Content-Type": "application/json", "x-goog-api-key": os.environ["GEMINI_API_KEY"]}, tries=2)
+            return json.loads(json.loads(r)["candidates"][0]["content"]["parts"][0]["text"])
+        except (RuntimeError, OSError) as e:
+            err = e
+    raise err
 
 
 def build(items, picks):
