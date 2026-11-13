@@ -1,6 +1,6 @@
 """每日 AI 新闻简报: Google News RSS -> Gemini 挑 3 条并写中文摘要 -> KakaoTalk「我的聊天」。
 环境变量: GEMINI_API_KEY, KAKAO_REST_KEY, KAKAO_REFRESH_TOKEN, KAKAO_CLIENT_SECRET(应用开了 Client Secret 时必填); 可选 FORCE=1(跳过时间/已发检查), DRY=1(只打印)。"""
-import json, os, sys, urllib.error, urllib.parse, urllib.request
+import json, os, time, urllib.error, urllib.parse, urllib.request
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta, timezone
 
@@ -12,12 +12,17 @@ RSS = "https://news.google.com/rss/search?" + urllib.parse.urlencode(
     {"q": "AI 인공지능 when:1d", "hl": "ko", "gl": "KR", "ceid": "KR:ko"})
 
 
-def call(url, data=None, headers=None):
-    req = urllib.request.Request(url, data, headers or {})
-    try:
-        return urllib.request.urlopen(req, timeout=30).read()
-    except urllib.error.HTTPError as e:
-        sys.exit(f"{url.split('?')[0]} -> {e.code} {e.read().decode()[:300]}")
+def call(url, data=None, headers=None, tries=4):
+    for n in range(tries):  # Gemini 免费版常返回 503/超时, 退避重试; 最后一次仍失败就抛出
+        try:
+            return urllib.request.urlopen(urllib.request.Request(url, data, headers or {}), timeout=60).read()
+        except urllib.error.HTTPError as e:
+            if e.code not in (429, 500, 502, 503, 504) or n == tries - 1:
+                raise RuntimeError(f"{url.split('?')[0]} -> {e.code} {e.read().decode()[:300]}")
+        except OSError:
+            if n == tries - 1:
+                raise
+        time.sleep(15 * 2 ** n)
 
 
 def fetch():
@@ -70,7 +75,12 @@ def main():
     items = [x for x in fetch() if x[1] not in state["links"]][:15]
     if not items:
         return print("没有新新闻")
-    msgs = build(items, ask_gemini(items))
+    try:
+        picks = ask_gemini(items)
+    except Exception as e:  # Gemini 挂了也要有通知: 退回前 3 条原标题
+        print("Gemini 失败, 退回原标题:", e)
+        picks = [{"i": n, "s": "(Gemini 暂不可用, 未摘要)"} for n in range(3)]
+    msgs = build(items, picks)
     if os.environ.get("DRY"):
         return print("\n\n".join(f"{t}\n-> {l}" for t, l in msgs))
     kakao_send(msgs)
